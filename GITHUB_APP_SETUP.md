@@ -73,14 +73,19 @@ op item edit "Supervisor Agent Secrets" --vault Personal \
 In the `agent-supervisor` repo, add these secrets at Settings -> Secrets and variables -> Actions:
 
 ```
-ANTHROPIC_API_KEY       — from 1Password: op read "op://Personal/Supervisor Agent Secrets/ANTHROPIC_API_KEY"
-GITHUB_APP_ID           — from 1Password: op read "op://Personal/Supervisor Agent Secrets/GITHUB_APP_ID"
-GITHUB_APP_PRIVATE_KEY  — from 1Password: op read "op://Personal/Supervisor Agent Secrets/GITHUB_APP_PRIVATE_KEY"
-LANGFUSE_SECRET_KEY     — from Langfuse dashboard after docker compose up
-LANGFUSE_PUBLIC_KEY     — from Langfuse dashboard after docker compose up
-LANGFUSE_HOST           — the public URL of your Langfuse instance
-TARGET_REPOS            — comma-separated: "yourname/repo1,yourname/repo2"
+ANTHROPIC_API_KEY    — from 1Password: op read "op://Personal/Supervisor Agent Secrets/ANTHROPIC_API_KEY"
+GH_APP_ID            — from 1Password: op read "op://Personal/Supervisor Agent Secrets/GITHUB_APP_ID"
+GH_APP_PRIVATE_KEY   — from 1Password: op read "op://Personal/Supervisor Agent Secrets/GITHUB_APP_PRIVATE_KEY"
+GH_APP_INSTALLATION_ID — from 1Password: op read "op://Personal/Supervisor Agent Secrets/GITHUB_APP_INSTALLATION_ID"
+LANGFUSE_SECRET_KEY  — from Langfuse dashboard after docker compose up
+LANGFUSE_PUBLIC_KEY  — from Langfuse dashboard after docker compose up
+LANGFUSE_HOST        — the public URL of your Langfuse instance
+TARGET_REPOS         — comma-separated: "yourname/repo1,yourname/repo2"
 ```
+
+> **Note:** GitHub Actions reserves the `GITHUB_` prefix for built-in variables.
+> Secrets are stored with the `GH_APP_` prefix but mapped to `GITHUB_APP_*` env vars by the workflow,
+> which is what the TypeScript code reads.
 
 ## Step 6: Verify Bot Identity
 

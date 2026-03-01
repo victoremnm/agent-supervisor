@@ -12,6 +12,34 @@ on:
         description: "Comma-separated repos to process (overrides TARGET_REPOS secret)"
         required: false
         type: string
+  # Reusable workflow — consuming repos call:
+  #   uses: victoremnm/agent-supervisor/.github/workflows/supervisor-cron.yml@main
+  #   secrets: inherit
+  workflow_call:
+    inputs:
+      target_repos:
+        description: "Comma-separated repos to process"
+        required: false
+        type: string
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      GH_APP_ID:
+        required: false
+      GH_APP_PRIVATE_KEY:
+        required: false
+      GH_APP_INSTALLATION_ID:
+        required: false
+      TARGET_REPOS:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_HOST:
+        required: false
+      GEMINI_API_KEY:
+        required: false
 
 # Minimal permissions — only what the daemon needs
 permissions:
@@ -51,10 +79,10 @@ jobs:
           # Anthropic
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-          # GitHub App identity
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
-          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+          # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
+          GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}
 
           # Target repositories — use workflow_dispatch input if provided, else secret
           TARGET_REPOS: ${{ inputs.target_repos || secrets.TARGET_REPOS }}
