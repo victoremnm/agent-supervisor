@@ -38,7 +38,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -z "${{ secrets.TARGET_REPOS }}" ]; then
+            echo "::warning::ANTHROPIC_API_KEY or TARGET_REPOS not configured — skipping run. See GITHUB_APP_SETUP.md."
+            echo "SKIP_RUN=true" >> $GITHUB_ENV
+          fi
+
       - name: Run supervisor daemon
+        if: env.SKIP_RUN != 'true'
         env:
           # Anthropic
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
