@@ -1,0 +1,85 @@
+name: PR Review Hook
+
+# HOW TO INSTALL THIS WORKFLOW IN TARGET REPOS:
+# This file triggers on PR events in repos where it runs. You have two options:
+#
+# Option A (Recommended): Copy this file to each target repo's .github/workflows/
+#   cp .github/workflows/pr-review-hook.yml ~/path/to/target-repo/.github/workflows/
+#   Then add the required secrets to each target repo.
+#
+# Option B: Use GitHub App webhook + this repo's Actions
+#   Set up the webhook URL to point to a GitHub Actions workflow_dispatch trigger.
+#   Requires a server or GitHub App webhook relay. See GITHUB_APP_SETUP.md Step 6.
+#
+# Required secrets in each target repo:
+#   ANTHROPIC_API_KEY, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY,
+#   GITHUB_APP_INSTALLATION_ID, AGENT_SUPERVISOR_PAT (PAT with repo read access),
+#   LANGFUSE_* (optional but recommended)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    # Note: This workflow must be installed in each target repo, not just agent-supervisor.
+    # See GITHUB_APP_SETUP.md for installation instructions.
+
+# Cancel in-progress review if PR is updated before review completes
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Supervisor PR review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # PR reviews should be faster than full loop
+
+    # Skip PRs opened by the bot itself (prevents infinite review loops)
+    if: github.event.pull_request.user.login != 'supervisor-bot[bot]'
+
+    steps:
+      - name: Checkout agent-supervisor
+        uses: actions/checkout@v4
+        with:
+          # Checkout the supervisor repo (not the PR's repo)
+          repository: ${{ github.repository_owner }}/agent-supervisor
+          token: ${{ secrets.AGENT_SUPERVISOR_PAT }}
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run PR review
+        env:
+          # Anthropic
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # GitHub App identity
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+
+          # PR context from the event
+          TARGET_REPOS: "${{ github.repository }}"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_ACTION: ${{ github.event.action }}
+
+          # Langfuse observability
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+
+          # Gemini (optional)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+        # Pass PR number as arg for targeted review (not full loop)
+        run: npx tsx src/supervisor/daemon.ts --pr ${{ github.event.pull_request.number }}

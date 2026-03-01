@@ -1,0 +1,25 @@
+{
+  "name": "agent-supervisor",
+  "version": "0.1.0",
+  "description": "Multi-repo code review and management supervisor agent",
+  "type": "module",
+  "scripts": {
+    "start": "npx tsx src/supervisor/daemon.ts",
+    "dev": "npx tsx --watch src/supervisor/daemon.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "@octokit/app": "^4.0.0",
+    "@octokit/rest": "^20.0.0",
+    "langfuse": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

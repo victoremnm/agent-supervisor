@@ -1,0 +1,71 @@
+name: Supervisor Loop
+
+on:
+  schedule:
+    # Every hour at :00 — adjust timing as needed
+    # Note: GitHub Actions cron has ~1 min jitter; minimum schedule is every 5 min
+    - cron: "0 * * * *"
+  workflow_dispatch:
+    # Manual trigger with optional repo override
+    inputs:
+      target_repos:
+        description: "Comma-separated repos to process (overrides TARGET_REPOS secret)"
+        required: false
+        type: string
+
+# Minimal permissions — only what the daemon needs
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  supervisor:
+    name: Run supervisor loop
+    runs-on: ubuntu-latest
+    timeout-minutes: 25  # Hard cap: prevent runaway agent loops from billing excess
+
+    steps:
+      - name: Checkout agent-supervisor
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run supervisor daemon
+        env:
+          # Anthropic
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # GitHub App identity
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
+          GITHUB_APP_INSTALLATION_ID: ${{ secrets.GITHUB_APP_INSTALLATION_ID }}
+
+          # Target repositories — use workflow_dispatch input if provided, else secret
+          TARGET_REPOS: ${{ inputs.target_repos || secrets.TARGET_REPOS }}
+
+          # Langfuse observability
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+
+          # Gemini (optional — only needed if gemini-analyzer subagent is used)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+        run: npx tsx src/supervisor/daemon.ts
+
+      - name: Upload run summary (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supervisor-run-${{ github.run_id }}
+          path: |
+            /tmp/supervisor-*.json
+          retention-days: 7
