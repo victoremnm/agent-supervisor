@@ -1,0 +1,68 @@
+# docker-compose.yml
+# Langfuse self-hosted observability stack
+# Source: https://langfuse.com/self-hosting
+# Usage: docker compose up -d
+# Access: http://localhost:3000 (default admin: create account on first visit)
+#
+# FIRST-TIME SETUP:
+# 1. Copy .env.example to .env and fill in NEXTAUTH_SECRET and SALT
+#    (use: openssl rand -base64 32)
+# 2. Run: docker compose up -d
+# 3. Visit http://localhost:3000, create your admin account
+# 4. Go to Settings -> API Keys, create a new key
+# 5. Copy LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY to .env
+
+version: "3.9"
+
+services:
+  langfuse-server:
+    image: langfuse/langfuse:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-in-production-32-chars-min}
+      SALT: ${SALT:-change-me-in-production-32-chars-min}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-langfuse-clickhouse-password}
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    environment:
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-langfuse-clickhouse-password}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  clickhouse_data:
