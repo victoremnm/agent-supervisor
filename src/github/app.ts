@@ -35,6 +35,34 @@ function getApp(): App {
 }
 
 /**
+ * Generate a GitHub App installation token and set it as GITHUB_TOKEN in
+ * process.env so that the `gh` CLI used by agent Bash tools can access
+ * all repositories in the installation (not just the current repo).
+ *
+ * Must be called once at daemon startup, before spawning any agents.
+ * No-ops gracefully if GitHub App env vars are not configured.
+ */
+export async function bootstrapGitHubToken(): Promise<void> {
+  const installationId = process.env.GITHUB_APP_INSTALLATION_ID;
+  if (!installationId) {
+    console.log("[auth] GITHUB_APP_INSTALLATION_ID not set — skipping token bootstrap");
+    return;
+  }
+
+  try {
+    const app = getApp();
+    const token = await app.getInstallationAccessToken({
+      installationId: parseInt(installationId, 10),
+    });
+    process.env.GITHUB_TOKEN = token;
+    console.log("[auth] GitHub App installation token set as GITHUB_TOKEN for gh CLI");
+  } catch (err) {
+    console.warn("[auth] Failed to bootstrap GitHub App token:", err instanceof Error ? err.message : String(err));
+    console.warn("[auth] gh CLI will fall back to the runner GITHUB_TOKEN (may lack cross-repo access)");
+  }
+}
+
+/**
  * Get an authenticated Octokit instance for a specific repo installation.
  *
  * Uses GITHUB_APP_INSTALLATION_ID env var if set (faster, no extra API call).

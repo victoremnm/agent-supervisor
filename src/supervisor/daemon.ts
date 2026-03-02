@@ -6,6 +6,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { AGENTS } from "./agents.js";
+import { bootstrapGitHubToken } from "../github/app.js";
 import { createTrace, flushTraces } from "../observability/langfuse.js";
 
 // Parse CLI args: --pr <number> for targeted PR review
@@ -31,6 +32,10 @@ if (TARGET_REPOS.length === 0) {
 }
 
 async function runSupervisorLoop(): Promise<void> {
+  // Bootstrap cross-repo gh CLI access using the GitHub App installation token.
+  // This must run before any agent Bash tools that call `gh pr list/diff/review`.
+  await bootstrapGitHubToken();
+
   const mode = targetPR ? `PR review (PR #${targetPR})` : "full supervisor sweep";
   console.log(`[daemon] Starting ${mode} for repos: ${TARGET_REPOS.join(", ")}`);
 
