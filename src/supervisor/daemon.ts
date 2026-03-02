@@ -32,10 +32,6 @@ if (TARGET_REPOS.length === 0) {
 }
 
 async function runSupervisorLoop(): Promise<void> {
-  // Bootstrap cross-repo gh CLI access using the GitHub App installation token.
-  // This must run before any agent Bash tools that call `gh pr list/diff/review`.
-  await bootstrapGitHubToken();
-
   const mode = targetPR ? `PR review (PR #${targetPR})` : "full supervisor sweep";
   console.log(`[daemon] Starting ${mode} for repos: ${TARGET_REPOS.join(", ")}`);
 
@@ -49,6 +45,12 @@ async function runSupervisorLoop(): Promise<void> {
 
   for (const repo of TARGET_REPOS) {
     const repoSpan = trace.span(`process-repo-${repo}`, { repo });
+
+    // Bootstrap gh CLI with the right installation token for this repo's owner.
+    // Each org (victoremnm, BonkBotTeam, lfefoundation) has its own installation ID.
+    // This must run before any agent Bash tools that call `gh pr list/diff/review`.
+    const owner = repo.split("/")[0];
+    await bootstrapGitHubToken(owner);
 
     console.log(`[daemon] Processing repo: ${repo}`);
 

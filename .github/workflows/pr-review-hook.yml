@@ -75,6 +75,7 @@ jobs:
           # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
           GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
           GITHUB_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          GITHUB_APP_INSTALLATION_IDS: ${{ secrets.GH_APP_INSTALLATION_IDS }}
           GITHUB_APP_INSTALLATION_ID: ${{ secrets.GH_APP_INSTALLATION_ID }}
 
           # PR context from the event
