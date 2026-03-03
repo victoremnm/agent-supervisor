@@ -1,13 +1,17 @@
 // src/supervisor/daemon.ts
-// Supervisor daemon entry point.
+// Supervisor daemon — Gemini Flash edition.
 // Triggered by: GitHub Actions cron (every hour) or PR event hook.
-// Source: https://platform.claude.com/docs/en/agent-sdk/subagents
+// Model: gemini-2.0-flash (free tier via aistudio.google.com)
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
-import { AGENTS } from "./agents.js";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import type { FunctionDeclaration } from "@google/generative-ai";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { SYSTEM_PROMPT, buildSweepPrompt, buildPRPrompt } from "./agents.js";
 import { bootstrapGitHubToken } from "../github/app.js";
 import { createTrace, flushTraces } from "../observability/langfuse.js";
+
+const execAsync = promisify(exec);
 
 // Parse CLI args: --pr <number> for targeted PR review
 const args = process.argv.slice(2);
@@ -25,11 +29,98 @@ const TARGET_REPOS = (process.env.TARGET_REPOS ?? "")
 
 if (TARGET_REPOS.length === 0) {
   console.error("[daemon] ERROR: TARGET_REPOS env var is not set or empty.");
-  console.error(
-    "[daemon] Set TARGET_REPOS=owner/repo1,owner/repo2 and retry."
-  );
   process.exit(1);
 }
+
+// ─── Bash tool ────────────────────────────────────────────────────────────────
+
+const BASH_TOOL: FunctionDeclaration = {
+  name: "bash",
+  description:
+    "Execute a shell command and return stdout/stderr. " +
+    "Use for gh pr list, gh pr diff, gh pr review, gh pr edit, jq, etc.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      command: {
+        type: SchemaType.STRING,
+        description: "The shell command to execute",
+      },
+    },
+    required: ["command"],
+  },
+};
+
+const MAX_OUTPUT_CHARS = 100_000; // Truncate runaway diffs
+
+async function runBash(command: string): Promise<string> {
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: 60_000,
+      maxBuffer: MAX_OUTPUT_CHARS * 4,
+    });
+    const combined = (stdout + (stderr ? `\nSTDERR: ${stderr}` : "")).trim();
+    return combined.length > MAX_OUTPUT_CHARS
+      ? combined.slice(0, MAX_OUTPUT_CHARS) + "\n[output truncated]"
+      : combined;
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    const out = ((e.stdout ?? "") + (e.stderr ?? "")) || (e.message ?? String(err));
+    return `[non-zero exit] ${out.slice(0, 4_000)}`;
+  }
+}
+
+// ─── Gemini agent loop ─────────────────────────────────────────────────────────
+
+async function runAgent(prompt: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    systemInstruction: SYSTEM_PROMPT,
+    tools: [{ functionDeclarations: [BASH_TOOL] }],
+  });
+
+  const chat = model.startChat();
+  let response = await chat.sendMessage(prompt);
+
+  // Tool-calling loop — runs until Gemini produces a plain text response
+  for (let turn = 0; turn < 50; turn++) {
+    const calls = response.response.functionCalls();
+    if (!calls || calls.length === 0) break;
+
+    // Execute all tool calls (may be batched by Gemini)
+    const toolResults = await Promise.all(
+      calls.map(async (call) => {
+        const cmdArgs = call.args as { command?: string };
+        const output =
+          call.name === "bash" && cmdArgs.command
+            ? await runBash(cmdArgs.command)
+            : `Unknown tool: ${call.name}`;
+
+        console.log(
+          `[tool] bash: ${(cmdArgs.command ?? "").slice(0, 120)}`,
+          output.length > 200 ? `→ ${output.length} chars` : `→ ${output.slice(0, 80)}`
+        );
+
+        return {
+          functionResponse: {
+            name: call.name,
+            response: { output },
+          },
+        };
+      })
+    );
+
+    response = await chat.sendMessage(toolResults);
+  }
+
+  return response.response.text();
+}
+
+// ─── Supervisor loop ───────────────────────────────────────────────────────────
 
 async function runSupervisorLoop(): Promise<void> {
   const mode = targetPR ? `PR review (PR #${targetPR})` : "full supervisor sweep";
@@ -37,6 +128,7 @@ async function runSupervisorLoop(): Promise<void> {
 
   const trace = createTrace("supervisor-run", {
     mode,
+    model: "gemini-2.0-flash",
     repos: TARGET_REPOS,
     prNumber: targetPR,
   });
@@ -46,53 +138,20 @@ async function runSupervisorLoop(): Promise<void> {
   for (const repo of TARGET_REPOS) {
     const repoSpan = trace.span(`process-repo-${repo}`, { repo });
 
-    // Bootstrap gh CLI with the right installation token for this repo's owner.
-    // Each org (victoremnm, BonkBotTeam, lfefoundation) has its own installation ID.
-    // This must run before any agent Bash tools that call `gh pr list/diff/review`.
+    // Set the right installation token for this org before gh CLI calls
     const owner = repo.split("/")[0];
     await bootstrapGitHubToken(owner);
 
     console.log(`[daemon] Processing repo: ${repo}`);
 
-    // Build the supervisor prompt based on mode
     const prompt = targetPR
-      ? `
-        Targeted PR review for ${repo} PR #${targetPR}:
-        1. Use code-reviewer to review: gh pr diff ${targetPR} --repo ${repo}
-        2. Use pr-manager to post the review result and apply labels
-        Bot identity for any git operations: GIT_AUTHOR_NAME="supervisor-bot[bot]"
-      `.trim()
-      : `
-        Full supervisor sweep for ${repo}:
-        1. Use repo-scrubber to triage: check open PRs, uncommitted changes, stale branches
-        2. For each open PR in the triage report (if requiresReview is true):
-           a. If the PR is in largePRs list: use gemini-analyzer instead of code-reviewer
-           b. Otherwise: use code-reviewer to review the diff
-        3. Use pr-manager to post each review result and apply labels (bot-reviewed + auto-approved or needs-changes)
-        4. Report a summary of actions taken
-        Bot identity for any git operations: GIT_AUTHOR_NAME="supervisor-bot[bot]"
-      `.trim();
+      ? buildPRPrompt(repo, targetPR)
+      : buildSweepPrompt(repo);
 
     try {
-      let lastResult = "";
-
-      const queryOptions: Options = {
-        allowedTools: ["Read", "Grep", "Glob", "Bash", "Task"],
-        agents: AGENTS,
-        maxTurns: 30,
-      };
-
-      for await (const message of query({
-        prompt,
-        options: queryOptions,
-      })) {
-        if ("result" in message) {
-          lastResult = String(message.result);
-          console.log(`[daemon] [${repo}] Done:`, lastResult.slice(0, 200));
-        }
-      }
-
-      repoSpan.end({ result: lastResult });
+      const result = await runAgent(prompt);
+      console.log(`[daemon] [${repo}] Done:`, result.slice(0, 200));
+      repoSpan.end({ result });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error(`[daemon] ERROR processing ${repo}:`, errorMsg);
@@ -101,9 +160,9 @@ async function runSupervisorLoop(): Promise<void> {
     }
   }
 
-  // Summary
   const summary = {
     reposProcessed: TARGET_REPOS.length,
+    model: "gemini-2.0-flash",
     errors: errors.length,
     errorDetails: errors,
   };
@@ -111,20 +170,14 @@ async function runSupervisorLoop(): Promise<void> {
 
   console.log("[daemon] Run complete:", summary);
 
-  if (errors.length > 0) {
-    console.error("[daemon] Errors encountered:", errors);
-  }
-
-  // Flush Langfuse traces before exit — critical, do not remove
   await flushTraces();
 
-  // Exit with error code if any repos failed (GitHub Actions will mark the run as failed)
   if (errors.length > 0) {
+    console.error("[daemon] Errors encountered:", errors);
     process.exit(1);
   }
 }
 
-// Run
 runSupervisorLoop().catch((err) => {
   console.error("[daemon] Fatal error:", err);
   flushTraces()

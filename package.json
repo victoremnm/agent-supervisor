@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "latest",
+    "@google/generative-ai": "^0.21.0",
     "@octokit/app": "^4.0.0",
     "@octokit/rest": "^20.0.0",
     "langfuse": "^2.0.0"

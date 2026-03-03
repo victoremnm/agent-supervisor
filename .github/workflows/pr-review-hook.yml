@@ -12,7 +12,7 @@ name: PR Review Hook
 #   Requires a server or GitHub App webhook relay. See GITHUB_APP_SETUP.md Step 6.
 #
 # Required secrets in each target repo:
-#   ANTHROPIC_API_KEY, GH_APP_ID, GH_APP_PRIVATE_KEY,
+#   GEMINI_API_KEY, GH_APP_ID, GH_APP_PRIVATE_KEY,
 #   GH_APP_INSTALLATION_ID, AGENT_SUPERVISOR_PAT (PAT with repo read access),
 #   LANGFUSE_* (optional but recommended)
 
@@ -62,15 +62,15 @@ jobs:
 
       - name: Check required secrets
         run: |
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            echo "::error::ANTHROPIC_API_KEY not configured. See GITHUB_APP_SETUP.md."
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "::error::GEMINI_API_KEY not configured. See GITHUB_APP_SETUP.md."
             exit 1
           fi
 
       - name: Run PR review
         env:
-          # Anthropic
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Gemini (primary model)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
           # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
           GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
@@ -87,9 +87,6 @@ jobs:
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
-
-          # Gemini (optional)
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
         # Pass PR number as arg for targeted review (not full loop)
         run: npx tsx src/supervisor/daemon.ts --pr ${{ github.event.pull_request.number }}

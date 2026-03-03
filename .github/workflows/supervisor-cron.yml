@@ -22,7 +22,7 @@ on:
         required: false
         type: string
     secrets:
-      ANTHROPIC_API_KEY:
+      GEMINI_API_KEY:
         required: true
       GH_APP_ID:
         required: false
@@ -72,16 +72,16 @@ jobs:
 
       - name: Check required secrets
         run: |
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ] || [ -z "${{ secrets.TARGET_REPOS }}" ]; then
-            echo "::warning::ANTHROPIC_API_KEY or TARGET_REPOS not configured — skipping run. See GITHUB_APP_SETUP.md."
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ] || [ -z "${{ secrets.TARGET_REPOS }}" ]; then
+            echo "::warning::GEMINI_API_KEY or TARGET_REPOS not configured — skipping run. See GITHUB_APP_SETUP.md."
             echo "SKIP_RUN=true" >> $GITHUB_ENV
           fi
 
       - name: Run supervisor daemon
         if: env.SKIP_RUN != 'true'
         env:
-          # Anthropic
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Gemini (primary model)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
           # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
           GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
@@ -99,8 +99,6 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
 
-          # Gemini (optional — only needed if gemini-analyzer subagent is used)
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
         run: npx tsx src/supervisor/daemon.ts
 
