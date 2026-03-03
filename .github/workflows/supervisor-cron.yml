@@ -78,9 +78,8 @@ jobs:
       - name: Run supervisor daemon
         if: env.SKIP_RUN != 'true'
         env:
-          # Gemini (primary model)
+          # Gemini (primary model — gemini-1.5-flash default, override with GEMINI_MODEL secret if needed)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
 
           # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
           GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
