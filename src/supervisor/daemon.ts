@@ -73,8 +73,7 @@ async function runBash(command: string): Promise<string> {
 // ─── Gemini agent loop ─────────────────────────────────────────────────────────
 
 // Model is configurable — override with GEMINI_MODEL env var.
-// Defaults to gemini-2.0-flash; fall back to gemini-1.5-flash if quota issues arise.
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-1.5-flash";
 
 /** Sleep for ms milliseconds. */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
