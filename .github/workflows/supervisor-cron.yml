@@ -42,8 +42,6 @@ on:
         required: false
       LANGFUSE_HOST:
         required: false
-      GEMINI_API_KEY:
-        required: false
 
 # Minimal permissions — only what the daemon needs
 permissions:
