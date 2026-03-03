@@ -80,6 +80,7 @@ jobs:
         env:
           # Gemini (primary model)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
 
           # GitHub App identity — note: secrets use GH_APP_* prefix (GITHUB_ is reserved by Actions)
           GITHUB_APP_ID: ${{ secrets.GH_APP_ID }}
