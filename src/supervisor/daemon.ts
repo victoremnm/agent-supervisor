@@ -72,19 +72,47 @@ async function runBash(command: string): Promise<string> {
 
 // ─── Gemini agent loop ─────────────────────────────────────────────────────────
 
+// Model is configurable — override with GEMINI_MODEL env var.
+// Defaults to gemini-2.0-flash; fall back to gemini-1.5-flash if quota issues arise.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+
+/** Sleep for ms milliseconds. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Retry a Gemini call on 429 quota errors using the API-suggested retry delay. */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const is429 = msg.includes("429") || msg.includes("Too Many Requests") || msg.includes("RESOURCE_EXHAUSTED");
+      if (!is429 || attempt === maxRetries) throw err;
+
+      // Parse retry delay from the API response if present (e.g. "retry in 43s")
+      const retryMatch = msg.match(/retry in (\d+)s/i) ?? msg.match(/"retryDelay":"(\d+)s"/);
+      const delaySec = retryMatch ? parseInt(retryMatch[1], 10) : 15 * (attempt + 1);
+      console.warn(`[gemini] 429 quota — retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries})`);
+      await sleep(delaySec * 1000);
+    }
+  }
+  throw new Error("withRetry: unreachable");
+}
+
 async function runAgent(prompt: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
 
+  console.log(`[gemini] Using model: ${GEMINI_MODEL}`);
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: GEMINI_MODEL,
     systemInstruction: SYSTEM_PROMPT,
     tools: [{ functionDeclarations: [BASH_TOOL] }],
   });
 
   const chat = model.startChat();
-  let response = await chat.sendMessage(prompt);
+  let response = await withRetry(() => chat.sendMessage(prompt));
 
   // Tool-calling loop — runs until Gemini produces a plain text response
   for (let turn = 0; turn < 50; turn++) {
@@ -114,7 +142,7 @@ async function runAgent(prompt: string): Promise<string> {
       })
     );
 
-    response = await chat.sendMessage(toolResults);
+    response = await withRetry(() => chat.sendMessage(toolResults));
   }
 
   return response.response.text();
